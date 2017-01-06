@@ -17,28 +17,25 @@
 
 package org.apache.carbondata.examples
 
-import java.io.File
-
 import org.apache.beam.sdk.Pipeline
 import org.apache.beam.sdk.io.hdfs.HDFSFileSource
 import org.apache.beam.sdk.options.PipelineOptionsFactory
-import org.apache.hadoop.conf.Configuration
-import org.apache.spark.sql.SparkSession
 
-import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.util.CarbonProperties
+import org.apache.hadoop.conf.Configuration
+
+import org.apache.carbondata.examples.util.ExampleUtils
 import org.apache.carbondata.hadoop.{CarbonInputFormat, CarbonProjection}
 
 // Write carbondata file by spark and read it by flink
 // scalastyle:off println
 object BeamExample {
-  var spark: SparkSession = _
-
   def main(args: Array[String]): Unit = {
-    // write carbondata file by spark
-    val path = writeCarbonFile("carbon_table")
 
-    // read two columns by beam
+
+    val cc = ExampleUtils.createCarbonContext("BeamExample")
+    val path = ExampleUtils.writeSampleCarbonFile(cc, "carbon1")
+
+    // read two columns by flink
     val conf = new Configuration()
     val projection = new CarbonProjection
     projection.addColumn("c1")  // column c1
@@ -46,80 +43,18 @@ object BeamExample {
     CarbonInputFormat.setColumnProjection(conf, projection)
 
     val p = Pipeline.create(PipelineOptionsFactory.fromArgs(args).create())
-    val records = HDFSFileSource.readFrom(
+    val records = HDFSFileSource.from(
       path,
       classOf[CarbonInputFormat[Array[Object]]],
       classOf[Void],
       classOf[Array[Object]]
     )
-
     p.run().waitUntilFinish()
     println(records)
 
     // delete carbondata file
-    cleanCarbonFile("carbon_table")
-  }
+    ExampleUtils.cleanSampleCarbonFile(cc, "carbon1")
 
-  private def cleanCarbonFile(tableName: String): Unit = {
-    spark.sql(s"DROP TABLE IF EXISTS $tableName")
-  }
-
-  private def writeCarbonFile(tableName: String): String = {
-    val rootPath = new File(this.getClass.getResource("/").getPath
-        + "../../../..").getCanonicalPath
-    val storeLocation = s"$rootPath/examples/spark2/target/store"
-    val warehouse = s"$rootPath/examples/spark2/target/warehouse"
-    val metastoredb = s"$rootPath/examples/spark2/target/metastore_db"
-
-    CarbonProperties.getInstance()
-        .addProperty("carbon.kettle.home", s"$rootPath/processing/carbonplugins")
-        .addProperty("carbon.storelocation", storeLocation)
-        .addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT, "yyyy/MM/dd")
-
-    import org.apache.spark.sql.CarbonSession._
-
-    spark = SparkSession
-        .builder()
-        .master("local")
-        .appName("CarbonExample")
-        .enableHiveSupport()
-        .config("spark.sql.warehouse.dir", warehouse)
-        .config("javax.jdo.option.ConnectionURL",
-          s"jdbc:derby:;databaseName=$metastoredb;create=true")
-        .getOrCreateCarbonSession()
-
-    spark.sparkContext.setLogLevel("WARN")
-
-    spark.sql("DROP TABLE IF EXISTS carbon_table")
-
-    // Create table
-    spark.sql(
-      s"""
-         | CREATE TABLE $tableName(
-         |    shortField short,
-         |    intField int,
-         |    bigintField long,
-         |    doubleField double,
-         |    stringField string,
-         |    timestampField timestamp,
-         |    decimalField decimal(18,2),
-         |    dateField date,
-         |    charField char(5)
-         | )
-         | STORED BY 'carbondata'
-         | TBLPROPERTIES('DICTIONARY_INCLUDE'='dateField, charField')
-       """.stripMargin)
-
-    val path = s"$rootPath/examples/spark2/src/main/resources/data.csv"
-
-    spark.sql(
-      s"""
-         | LOAD DATA LOCAL INPATH '$path'
-         | INTO TABLE $tableName
-         | options('FILEHEADER'='shortField,intField,bigintField,doubleField,stringField,timestampField,decimalField,dateField,charField')
-       """.stripMargin)
-
-    storeLocation + "/default/" + tableName
   }
 }
 // scalastyle:on println
