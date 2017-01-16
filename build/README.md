@@ -29,7 +29,7 @@
 ## Build release version
 Note:Need install Apache Thrift 0.9.3
 ```
-mvn clean -DskipTests -Pbuild-with-format -Pspark-1.6 install
+mvn clean -DskipTests -Pbuild-with-format -Pspark-1.6 package
 ```
 
 ## Build dev version(snapshot version,clone from github)
